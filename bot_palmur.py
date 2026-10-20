@@ -7,13 +7,12 @@ bot = telebot.TeleBot(TOKEN)
 
 EXCEL_PALMUR = 'Laporan_Palmur.xlsx'
 
-# 1. DAFTAR ITEM DAN TARGET YANG ANDA TENTUKAN SENDIRI DI SINI
-# Format: "Kode_Atau_Nama": {"nama_item": "Nama Lengkap", "target": Jumlah_Target}
+# DAFTAR ITEM DAN TARGET DALAM SATUAN PCS
 DAFTAR_ITEM = {
-    "1": {"nama_item": "Minyak Goreng 2L", "target": 500000},
-    "2": {"nama_item": "Beras Premium 5kg", "target": 750000},
-    "3": {"nama_item": "Gula Pasir 1kg", "target": 300000},
-    # Silakan tambahkan item lainnya sesuai kebutuhan toko Anda di sini
+    "1": {"nama_item": "Minyak Goreng 2L", "target": 100},  # Target 100 pcs
+    "2": {"nama_item": "Beras Premium 5kg", "target": 150}, # Target 150 pcs
+    "3": {"nama_item": "Gula Pasir 1kg", "target": 80},     # Target 80 pcs
+    # Silakan tambah item lainnya di sini
 }
 
 def init_excel():
@@ -21,16 +20,16 @@ def init_excel():
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Palmur"
-        ws.append(["No", "Nama Item", "Target", "Sales", "Ach (%)"])
+        ws.append(["No", "Nama Item", "Target (Pcs)", "Sales (Pcs)", "Ach (%)"])
         wb.save(EXCEL_PALMUR)
 
 init_excel()
 
-def format_rp(angka):
+def format_pcs(angka):
     if angka is None or angka == "":
         return "-"
     if isinstance(angka, (int, float)):
-        return f"Rp {angka:,.0f}".replace(',', '.')
+        return f"{angka:,.0f} pcs".replace(',', '.')
     return str(angka)
 
 def format_val(val):
@@ -42,30 +41,30 @@ def format_val(val):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    list_menu = "📋 *Daftar Kode Item Palmur:*\n"
+    list_menu = "📋 *Daftar Item & Target Palmur (Pcs):*\n"
     for k, v in DAFTAR_ITEM.items():
-        list_menu += f"• Kode `{k}`: *{v['nama_item']}* (Target: {format_rp(v['target'])})\n"
+        list_menu += f"• Kode `{k}`: *{v['nama_item']}* (Target: {v['target']} pcs)\n"
         
     bantuan = (
-        "🌴 *Bot Laporan Palmur V2.0*\n\n"
+        "🌴 *Bot Laporan Palmur V3.0 (Pcs)*\n\n"
         f"{list_menu}\n"
         "Perintah untuk input penjualan:\n"
-        "📝 `/input <kode_item> <sales_aktual>`\n"
-        "   *(Contoh: `/input 1  450000`)*\n\n"
+        "📝 `/input <kode_item> <sales_pcs>`\n"
+        "   *(Contoh: `/input 1 85`)*\n\n"
         "📋 `/laporan` - Lihat rekap seluruh item Palmur\n"
         "🗑️ `/hapus` - Hapus data terakhir"
     )
     bot.reply_to(message, bantuan, parse_mode='Markdown')
 
 # ==========================================
-# COMMAND: /input <kode_item> <sales>
+# COMMAND: /input <kode_item> <sales_pcs>
 # ==========================================
 @bot.message_handler(commands=['input', 'palmur'])
 def handle_input_palmur(message):
     try:
         args = message.text.split()
         if len(args) < 3:
-            bot.reply_to(message, "❌ Format salah!\nGunakan: `/input <kode_item> <sales>`\nContoh: `/input 1 450000`", parse_mode='Markdown')
+            bot.reply_to(message, "❌ Format salah!\nGunakan: `/input <kode_item> <sales_pcs>`\nContoh: `/input 1 85`", parse_mode='Markdown')
             return
             
         kode = args[1]
@@ -93,14 +92,14 @@ def handle_input_palmur(message):
         pesan_sukses = (
             f"✅ *Penjualan Palmur Berhasil Disimpan!*\n\n"
             f"🏷️ Item: *{nama_item}*\n"
-            f"🎯 Target: {format_rp(target)}\n"
-            f"💰 Sales: {format_rp(sales)}\n"
+            f"🎯 Target: {format_pcs(target)}\n"
+            f"📦 Sales: {format_pcs(sales)}\n"
             f"📈 Ach: *{format_val(ach)}*"
         )
         bot.reply_to(message, pesan_sukses, parse_mode='Markdown')
         
     except ValueError:
-        bot.reply_to(message, "❌ Pastikan nominal sales berupa angka yang valid.")
+        bot.reply_to(message, "❌ Pastikan jumlah sales berupa angka pcs yang valid.")
     except Exception as e:
         bot.reply_to(message, f"❌ Terjadi kesalahan: {e}")
 
@@ -117,7 +116,7 @@ def handle_laporan_palmur(message):
             bot.reply_to(message, "❌ Belum ada data item Palmur yang tersimpan.")
             return
 
-        pesan = "📋 *REKAP LAPORAN PALMUR*\n"
+        pesan = "📋 *REKAP LAPORAN PALMUR (PCS)*\n"
         pesan += "--------------------------------------\n"
         
         total_target = 0
@@ -134,13 +133,13 @@ def handle_laporan_palmur(message):
             total_sales += sls
             
             pesan += f"{no}. *{item}*\n"
-            pesan += f"   Tgt: {format_rp(tgt)} | Sls: {format_rp(sls)} | Ach: *{format_val(ach)}*\n"
+            pesan += f"   Tgt: {format_pcs(tgt)} | Sls: {format_pcs(sls)} | Ach: *{format_val(ach)}*\n"
             
         total_ach = (total_sales / total_target * 100) if total_target > 0 else 0
         
         pesan += "--------------------------------------\n"
-        pesan += f"🎯 *Total Target:* {format_rp(total_target)}\n"
-        pesan += f"💵 *Total Sales:* {format_rp(total_sales)}\n"
+        pesan += f"🎯 *Total Target:* {format_pcs(total_target)}\n"
+        pesan += f"📦 *Total Sales:* {format_pcs(total_sales)}\n"
         pesan += f"📈 *Ach Keseluruhan:* *{format_val(total_ach)}*"
         
         bot.reply_to(message, pesan, parse_mode='Markdown')
@@ -173,5 +172,5 @@ def handle_hapus_palmur(message):
         bot.reply_to(message, f"❌ Gagal menghapus: {e}")
 
 if __name__ == '__main__':
-    print("🤖 Bot Palmur V2.0 Berhasil Dijalankan...")
+    print("🤖 Bot Palmur V3.0 (Pcs) Berhasil Dijalankan...")
     bot.polling(none_stop=True, interval=0)
