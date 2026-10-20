@@ -3,7 +3,7 @@ import openpyxl
 import os
 
 # Gunakan Token Bot khusus Palmur dari @BotFather
-TOKEN = 'KODE_TOKEN_BOT_PALMUR_DARI_BOTFATHER'
+TOKEN = '8037929349:AAHHYxyZRC-Gpz7pTND2y55NMl5_-DR4wW8'
 bot = telebot.TeleBot(TOKEN)
 
 EXCEL_PALMUR = 'Laporan_Palmur.xlsx'
