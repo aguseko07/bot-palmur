@@ -8,12 +8,15 @@ bot = telebot.TeleBot(TOKEN)
 EXCEL_PALMUR = 'Laporan_Palmur.xlsx'
 
 # DAFTAR ITEM DAN TARGET DALAM SATUAN PCS
-DAFTAR_ITEM = {
-    "1": {"nama_item": "Minyak Goreng 2L", "target": 100},  # Target 100 pcs
-    "2": {"nama_item": "Beras Premium 5kg", "target": 150}, # Target 150 pcs
-    "3": {"nama_item": "Gula Pasir 1kg", "target": 80},     # Target 80 pcs
-    # Silakan tambah item lainnya di sini
-}
+DAFTAR_ITEM = [
+    {"id": 0, "nama_item": "Minyak Goreng 2L", "target": 100},
+    {"id": 1, "nama_item": "Beras Premium 5kg", "target": 150},
+    {"id": 2, "nama_item": "Gula Pasir 1kg", "target": 80},
+    # Tambahkan item lainnya di sini jika perlu
+]
+
+# Menyimpan sesi input aktif pengguna
+user_sessions = {}
 
 def init_excel():
     if not os.path.exists(EXCEL_PALMUR):
@@ -41,67 +44,102 @@ def format_val(val):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    list_menu = "📋 *Daftar Item & Target Palmur (Pcs):*\n"
-    for k, v in DAFTAR_ITEM.items():
-        list_menu += f"• Kode `{k}`: *{v['nama_item']}* (Target: {v['target']} pcs)\n"
-        
     bantuan = (
-        "🌴 *Bot Laporan Palmur V3.0 (Pcs)*\n\n"
-        f"{list_menu}\n"
-        "Perintah untuk input penjualan:\n"
-        "📝 `/input <kode_item> <sales_pcs>`\n"
-        "   *(Contoh: `/input 1 85`)*\n\n"
+        "🌴 *Bot Laporan Palmur Interaktif V4.0*\n\n"
+        "Gunakan perintah `/input` untuk mulai mengisi laporan penjualan item demi item secara berurutan.\n\n"
         "📋 `/laporan` - Lihat rekap seluruh item Palmur\n"
         "🗑️ `/hapus` - Hapus data terakhir"
     )
     bot.reply_to(message, bantuan, parse_mode='Markdown')
 
 # ==========================================
-# COMMAND: /input <kode_item> <sales_pcs>
+# MEMULAI SESI INPUT INTERAKTIF
 # ==========================================
 @bot.message_handler(commands=['input', 'palmur'])
-def handle_input_palmur(message):
+def start_interactive_input(message):
+    chat_id = message.chat.id
+    # Mulai dari item pertama (index 0)
+    user_sessions[chat_id] = {
+        "step": 0,
+        "results": []
+    }
+    tanya_item berikutnya(chat_id)
+
+def tanya_item_berikutnya(chat_id):
+    session = user_sessions.get(chat_id)
+    if not session:
+        return
+        
+    step = session["step"]
+    if step < len(DAFTAR_ITEM):
+        item = DAFTAR_ITEM[step]
+        pesan = (
+            f"📝 *Input Penjualan Palmur ({step + 1}/{len(DAFTAR_ITEM)})\n\n"
+            f"🏷️ Item: *{item['nama_item']}*\n"
+            f"🎯 Target: {item['target']} pcs\n\n"
+            f"👇 *Berapa jumlah sales (pcs) untuk item ini?*\n"
+            f"_(Ketik langsung angkanya di chat)_"
+        )
+        bot.send_message(chat_id, pesan, parse_mode='Markdown')
+    else:
+        # Selesai, simpan semua ke Excel
+        simpan_semua_hasil(chat_id)
+
+@bot.message_handler(func=lambda message: message.chat.id in user_sessions)
+def handle_text_input(message):
+    chat_id = message.chat.id
+    session = user_sessions[chat_id]
+    
     try:
-        args = message.text.split()
-        if len(args) < 3:
-            bot.reply_to(message, "❌ Format salah!\nGunakan: `/input <kode_item> <sales_pcs>`\nContoh: `/input 1 85`", parse_mode='Markdown')
-            return
+        sales_val = float(message.text.replace('.', '').replace(',', ''))
+        step = session["step"]
+        item = DAFTAR_ITEM[step]
+        
+        target = item['target']
+        ach = (sales_val / target * 100) if target > 0 else 0
+        
+        # Simpan hasil sementara ke sesi
+        session["results"].append({
+            "nama_item": item['nama_item'],
+            "target": target,
+            "sales": sales_val,
+            "ach": ach
+        })
+        
+        # Lanjut ke item berikutnya
+        session["step"] += 1
+        
+        if session["step"] < len(DAFTAR_ITEM):
+            tanya_item_berikutnya(chat_id)
+        else:
+            simpan_semua_hasil(chat_id)
             
-        kode = args[1]
-        if kode not in DAFTAR_ITEM:
-            bot.reply_to(message, f"❌ Kode item `{kode}` tidak ditemukan! Ketik /start untuk melihat daftar kode item.", parse_mode='Markdown')
-            return
-            
-        sales = float(args[2].replace('.', '').replace(',', ''))
-        nama_item = DAFTAR_ITEM[kode]['nama_item']
-        target = DAFTAR_ITEM[kode]['target']
+    except ValueError:
+        bot.reply_to(message, "❌ Masukkan angka sales (pcs) yang valid.")
+
+def simpan_semua_hasil(chat_id):
+    session = user_sessions.pop(chat_id, None)
+    if not session or not session["results"]:
+        return
         
-        # Hitung Achievement (Ach %)
-        ach = (sales / target * 100) if target > 0 else 0
-        
-        wb = openpyxl.load_workbook(EXCEL_PALMUR)
-        ws = wb.active
-        
+    wb = openpyxl.load_workbook(EXCEL_PALMUR)
+    ws = wb.active
+    
+    ringkasan = "✅ *Semua Penjualan Palmur Berhasil Disimpan!*\n\n"
+    
+    for res in session["results"]:
         next_row = ws.max_row + 1
         no = next_row - 1
+        ws.append([no, res["nama_item"], res["target"], res["sales"], res["ach"]])
         
-        # Simpan ke Excel
-        ws.append([no, nama_item, target, sales, ach])
-        wb.save(EXCEL_PALMUR)
+        ringkasan += f"• *{res['nama_item']}* ➔ Sales: {format_pcs(res['sales'])} (Ach: {format_val(res['ach'])})\n"
         
-        pesan_sukses = (
-            f"✅ *Penjualan Palmur Berhasil Disimpan!*\n\n"
-            f"🏷️ Item: *{nama_item}*\n"
-            f"🎯 Target: {format_pcs(target)}\n"
-            f"📦 Sales: {format_pcs(sales)}\n"
-            f"📈 Ach: *{format_val(ach)}*"
-        )
-        bot.reply_to(message, pesan_sukses, parse_mode='Markdown')
-        
-    except ValueError:
-        bot.reply_to(message, "❌ Pastikan jumlah sales berupa angka pcs yang valid.")
-    except Exception as e:
-        bot.reply_to(message, f"❌ Terjadi kesalahan: {e}")
+    wb.save(EXCEL_PALMUR)
+    
+    bot.send_message(chat_id, ringkasan, parse_mode='Markdown')
+    
+    with open(EXCEL_PALMUR, 'rb') as doc:
+        bot.send_document(chat_id, doc, caption="📂 File Excel Palmur Terbaru")
 
 # ==========================================
 # COMMAND: /laporan
@@ -172,5 +210,5 @@ def handle_hapus_palmur(message):
         bot.reply_to(message, f"❌ Gagal menghapus: {e}")
 
 if __name__ == '__main__':
-    print("🤖 Bot Palmur V3.0 (Pcs) Berhasil Dijalankan...")
+    print("🤖 Bot Palmur Interaktif V4.0 Berhasil Dijalankan...")
     bot.polling(none_stop=True, interval=0)
